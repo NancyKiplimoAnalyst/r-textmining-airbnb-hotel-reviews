@@ -1,0 +1,1027 @@
+---
+title: "ITEC 724 CLASS PROJECT"
+author: "KIPLIMO NANCY"
+date: "2024-10-12"
+format:
+  #html:
+    #self-contained: true
+    #code-fold: true
+    #code-tools: true
+  pdf:
+    titlepage: true
+    toc: true
+    toc-depth: 2
+
+    
+execute:
+  echo: true
+  output: true
+  message: true
+  warning: true
+  freeze: false
+editor: visual
+---
+
+# Part 1: Importing data and preprocessing
+
+```{r}
+#install.packages("tinytex")    
+```
+```{r}
+#tinytex::install_tinytex()
+```
+```{r}
+tinytex::is_tinytex()
+```
+
+## load the required packages
+
+```{r, results='hide'}
+library(readr)
+library(tidytext)
+library(dplyr)
+library(tm)
+library(caret)
+library(ggplot2)
+library(tidyverse)
+library(e1071)
+library(wordcloud)
+library(SnowballC)
+library(Matrix)
+library(quanteda)
+library(textcat)
+library(stringr)
+library(tinytex)
+```
+
+```{r}
+#Import the data and save in an object called Airbnbreviews and Hotelreviews
+Airbnbreviews<-read.csv("Airbnb reviews.csv")
+Hotelreviews<-read.csv("tripadvisor_hotel_reviews.csv")
+```
+
+## counts of the observations and visualize
+
+```{r}
+# Count the number of reviews in each dataset
+num_airbnb_reviews <- nrow(Airbnbreviews)
+num_hotel_reviews <- nrow(Hotelreviews)
+
+# Print counts
+print(paste("Number of Airbnb reviews:", num_airbnb_reviews))
+print(paste("Number of Hotel reviews:", num_hotel_reviews))
+# Create a summary data frame for review counts
+review_counts <- data.frame(
+  Source = c("Airbnb", "Hotel"),
+  Count = c(num_airbnb_reviews, num_hotel_reviews)
+)
+# Create a bar chart to visualize the counts of reviews
+ggplot(review_counts, aes(x = Source, y = Count, fill = Source)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Total Review Counts: Airbnb vs Hotel",
+       x = "Source",
+       y = "Number of Reviews") +
+  theme_minimal()
+```
+
+## Check the head for both dataset
+
+I am going to explore the datasets differently
+
+## Airbnb dataset
+
+```{r}
+head(Airbnbreviews)
+```
+
+## Hotel dataset
+
+```{r}
+head(Hotelreviews)
+```
+
+## check for missing data
+
+```{r}
+# Check for missing values in Hotelreviews dataset
+sum(is.na(Hotelreviews))
+```
+
+```{r}
+# Check for missing values in Airbnbreviews dataset
+sum(is.na(Airbnbreviews))
+```
+
+## Remove missing values
+
+```{r}
+# Remove rows with missing values in Airbnbreviews
+Airbnbreviews <- Airbnbreviews[!rowSums(is.na(Airbnbreviews)), ]
+```
+
+```{r}
+#now recheck if missing values are removed
+sum(is.na(Airbnbreviews))
+```
+
+## check class
+
+```{r}
+class(Hotelreviews)
+class(Airbnbreviews)
+```
+
+#Tokenize both datasets
+
+```{r}
+# Tokenize Hotelreviews dataset
+Hotelreviews <- Hotelreviews %>%
+  unnest_tokens(word, Review) 
+```
+
+## recheck again
+
+```{r}
+head(Hotelreviews)
+```
+
+## Tokenize airbnb dataset
+
+```{r}
+# Tokenize Airbnbreviews dataset
+Airbnbreviews <- Airbnbreviews %>%
+  unnest_tokens(word, comments)
+```
+
+## check the heads
+
+```{r}
+# check the few rows
+head(Airbnbreviews)
+```
+
+## Create sentiment column for hotel dataset
+
+```{r}
+# Now create sentiment column for hotel dataset
+Hotelreviews <- Hotelreviews %>%
+  mutate(sentiment = case_when(
+    Rating >= 4 ~ "Positive",  
+    Rating == 3 ~ "Neutral",   
+    Rating <= 2 ~ "Negative"   
+  ))
+```
+
+```{r}
+# recheck again
+head(Hotelreviews)
+```
+
+## display the created sentiments
+
+```{r}
+# Count the number of reviews in each sentiment category
+hotel_sentiment_count <- Hotelreviews %>%
+  count(sentiment)
+
+# Display the counts
+print(hotel_sentiment_count)
+```
+
+## Perform word count for each datasets
+
+## word count for Hotel
+
+```{r}
+# Count word frequencies for hotel dataset
+hotel_word_freq <- Hotelreviews %>%
+  count(word, sort = TRUE)
+head(hotel_word_freq)
+```
+
+```{r}
+# Count word frequencies for airbnb Dataset
+Airbnb_word_freq <- Airbnbreviews %>%
+  count(word, sort = TRUE)
+head(Airbnb_word_freq)
+```
+
+## Visualize both datasets before preprocessing
+
+```{r}
+# Visualization of the top 30 frequent words in Hotel reviews
+hotel_word_freq %>%
+  top_n(30) %>%
+  ggplot(aes(x = reorder(word, n), y = n)) +
+  geom_bar(stat = 'identity', fill = 'blue') +
+  coord_flip() +
+  labs(title = "Top 30 Words in Hotel Reviews", x = "Words", y = "Frequency")
+```
+
+```{r}
+# Visualization of the top 30 frequent words in Airbnb reviews
+Airbnb_word_freq %>%
+  top_n(30) %>%
+  ggplot(aes(x = reorder(word, n), y = n)) +
+  geom_bar(stat = 'identity', fill = 'red') +
+  coord_flip() +
+  labs(title = "Top 30 Words in Airbnb Reviews", x = "Words", y = "Frequency")
+```
+
+## Preprocess the Airbnb dataset
+
+## sentiment analysis for Airbnb Dataset by using Bing lexicon
+
+```{r}
+# Load stopwords
+data("stop_words")
+
+#Remove stopwords and punctuation from the Airbnbreviews tokenized data
+Airbnbreviews <- Airbnbreviews %>%
+  anti_join(stop_words, by = "word") %>%  
+  filter(!word %in% c(".", ",", "!", "?", "-", "_", ":", ";", "(", ")"))  
+#Load the Bing sentiment lexicon
+bing_lexicon <- get_sentiments("bing")
+
+#Perform sentiment analysis by joining the cleaned data with the Bing lexicon
+Airbnb_sentiment <- Airbnbreviews %>%
+  inner_join(bing_lexicon, by = "word")
+
+#Summarize sentiment score for each review (assuming you have a review 'id' column)
+Airbnb_sentiment_summary <- Airbnb_sentiment %>%
+  group_by(id) %>%
+  summarise(sentiment_score = sum(sentiment == "positive") - sum(sentiment == "negative"))
+
+# Join the sentiment scores back to the original Airbnb dataset
+# Force neutral sentiment when sentiment score is zero
+Airbnbreviews <- Airbnbreviews %>%
+  left_join(Airbnb_sentiment_summary, by = "id") %>%
+  mutate(
+    # Classify reviews as Positive, Neutral (when score = 0), or Negative
+    sentimentbnb = case_when(
+      sentiment_score > 0 ~ "Positive",
+      sentiment_score == 0 ~ "Neutral",
+      sentiment_score < 0 ~ "Negative"
+    ),
+    # Force zeros for neutral sentiment if needed
+    sentiment_score = ifelse(is.na(sentiment_score), 0, sentiment_score)
+  )
+
+# Check the result
+head(Airbnbreviews)
+```
+
+```{r}
+# Count the number of reviews in each sentiment category
+airbnb_sentiment_summary <- Airbnbreviews %>%
+  count(sentimentbnb)
+
+# View the sentiment distribution
+print(airbnb_sentiment_summary)
+```
+
+```{r}
+# Classify reviews with NA in sentimentbnb as "Neutral" if sentiment_score is 0
+Airbnbreviews <- Airbnbreviews %>%
+  mutate(sentimentbnb = ifelse(is.na(sentimentbnb) & sentiment_score == 0, "Neutral", sentimentbnb))
+
+# Check the updated dataset to ensure it reflects the changes
+head(Airbnbreviews)
+```
+
+```{r}
+# now check again
+# Count the number of reviews in each sentiment category
+airbnb_sentiment_summary <- Airbnbreviews %>%
+  count(sentimentbnb)
+
+# View the sentiment distribution
+print(airbnb_sentiment_summary)
+```
+
+```{r}
+# Filter the Airbnb dataset to show only Positive reviews
+positive_airbnb_reviews <- Airbnbreviews %>%
+  filter(sentimentbnb == "Positive")
+
+# Display the first few Positive Airbnb reviews
+head(positive_airbnb_reviews)
+```
+
+```{r}
+# Load stopwords for Hotelreviews
+data("stop_words")
+
+# Remove stopwords from Hotelreviews tokenized data
+Hotelreviews <- Hotelreviews %>%
+  anti_join(stop_words, by = "word") %>%
+  filter(!word %in% c(".", ",", "!", "?", "-", "_", ":", ";", "(", ")"))  # Remove punctuation
+
+# Check the cleaned Hotelreviews data
+head(Hotelreviews)
+```
+
+# Part 2: Visualize term frequency for both datasets
+
+```{r}
+# Count word frequency for Airbnb dataset(bar plot)
+airbnb_word_freq <- Airbnbreviews %>%
+  count(word, sort = TRUE)
+
+# Visualize the top 30 frequent words in Airbnb reviews
+ggplot(airbnb_word_freq %>% top_n(30), aes(x = reorder(word, n), y = n)) +
+  geom_bar(stat = "identity", fill = "yellow") +
+  coord_flip() +
+  labs(title = "Top 30 Words in Airbnb Reviews", x = "Words", y = "Frequency")
+```
+
+```{r}
+# Count word frequency for Hotel dataset
+hotel_word_freq <- Hotelreviews %>%
+  count(word, sort = TRUE)
+
+# Visualize the top 30 frequent words in Hotel reviews
+ggplot(hotel_word_freq %>% top_n(30), aes(x = reorder(word, n), y = n)) +
+  geom_bar(stat = "identity", fill = "lightgreen") +
+  coord_flip() +
+  labs(title = "Top 30 Words in Hotel Reviews", x = "Words", y = "Frequency")
+```
+
+# Part 3: calculating the TF \*IDF for both datasets
+
+## TF\*IDF for Hotel dataset
+
+```{r}
+# Calculate TF-IDF for Hotel reviews, using 'Rating' to group by review
+hotel_tfidf <- Hotelreviews %>%
+  count(Rating, word) %>%  # Group by Rating (assuming it's your review identifier)
+  bind_tf_idf(word, Rating, n)  # Calculate TF-IDF
+
+# Arrange by the highest TF-IDF values
+hotel_tfidf <- hotel_tfidf %>%
+  arrange(desc(tf_idf))
+
+# View the top TF-IDF words in Hotel reviews
+head(hotel_tfidf)
+
+# Visualize the top 20 TF-IDF words in Hotel reviews
+hotel_tfidf %>%
+  top_n(20) %>%
+  ggplot(aes(x = reorder(word, tf_idf), y = tf_idf)) +
+  geom_bar(stat = "identity", fill = "lightgreen") +
+  coord_flip() +
+  labs(title = "Top 20 TF-IDF Words in Hotel Reviews", x = "Words", y = "TF-IDF Score")
+```
+
+## TF\*IDF for Airbnb dataset
+
+```{r}
+# ## TF*IDF for Airbnb dataset
+airbnb_tfidf <- Airbnbreviews %>%
+  count(sentimentbnb, word) %>%  # Group by sentimentbnb 
+  bind_tf_idf(word, sentimentbnb, n)  # Calculate TF-IDF
+
+# Arrange by the highest TF-IDF values
+airbnb_tfidf <- airbnb_tfidf %>%
+  arrange(desc(tf_idf))
+
+# View the top TF-IDF words in Airbnb reviews
+head(airbnb_tfidf)
+
+# Visualize the top 20 TF-IDF words in Airbnb reviews
+airbnb_tfidf %>%
+  top_n(20) %>%
+  ggplot(aes(x = reorder(word, tf_idf), y = tf_idf)) +
+  geom_bar(stat = "identity", fill = "lightblue") +
+  coord_flip() +
+  labs(title = "Top 20 TF-IDF Words in Airbnb Reviews", x = "Words", y = "TF-IDF Score")
+```
+
+# PART 4: NGRAMS FOR BOTH DATASETS
+
+## Bigrams visualization for hotel reviews
+
+```{r}
+Airbnbreviews2<-read.csv("Airbnb reviews.csv")
+Hotelreviews2<-read.csv("tripadvisor_hotel_reviews.csv")
+# Tokenize Trigrams for Hotel reviews
+hotel_trigrams <- Hotelreviews2 %>%
+  unnest_tokens(trigram, Review, token = "ngrams", n = 3)
+
+# Count Trigram frequencies
+hotel_trigrams_freq <- hotel_trigrams %>%
+  count(trigram, sort = TRUE)
+
+# Visualize the top 20 Trigrams
+ggplot(hotel_trigrams_freq %>% top_n(20), aes(x = reorder(trigram, n), y = n)) +
+  geom_bar(stat = "identity", fill = "lightgreen") +
+  coord_flip() +
+  labs(title = "Top 20 Trigrams in Hotel Reviews", x = "Trigrams", y = "Frequency")
+```
+
+## Quadgrams visualization for Airbnb reviews
+
+```{r}
+# Tokenize quadgrams for Airbnb reviews
+airbnb_quadgrams <- Airbnbreviews2 %>%
+  unnest_tokens(quadgram, comments, token = "ngrams", n = 4)
+
+# Count quadgram frequencies
+airbnb_quadgrams_freq <- airbnb_quadgrams %>%
+  count(quadgram, sort = TRUE)
+
+# Visualize the top 20 quadgrams
+ggplot(airbnb_quadgrams_freq %>% top_n(20), aes(x = reorder(quadgram, n), y = n)) +
+  geom_bar(stat = "identity", fill = "lightblue") +
+  coord_flip() +
+  labs(title = "Top 20 Quadgrams in Airbnb Reviews", x = "Quadgrams", y = "Frequency")
+```
+
+## Sentiment distribution for hotel
+
+```{r}
+# Visualize sentiment distribution for Hotel reviews with different colors for each sentiment
+ggplot(Hotelreviews, aes(x = sentiment, fill = sentiment)) +
+  geom_bar() +
+  labs(title = "Sentiment Distribution in Hotel Reviews", x = "Sentiment", y = "Count") +
+  scale_fill_manual(values = c("Positive" = "lightblue", "Neutral" = "lightgray", "Negative" = "red"))
+```
+
+## Sentiment distribution for Airbnb
+
+```{r}
+# Visualize sentiment distribution for Airbnb reviews with different colors for each sentiment
+ggplot(Airbnbreviews, aes(x = sentimentbnb, fill = sentimentbnb)) +
+  geom_bar() +
+  labs(title = "Sentiment Distribution in Airbnb Reviews", x = "Sentiment", y = "Count") +
+  scale_fill_manual(values = c("Positive" = "lightblue", "Neutral" = "lightgray", "Negative" = "red"))
+```
+
+```{r}
+# Combine the top words for both datasets
+combined_word_freq <- bind_rows(
+  airbnb_word_freq %>% top_n(20) %>% mutate(source = "Airbnb"),
+  hotel_word_freq %>% top_n(20) %>% mutate(source = "Hotel")
+)
+
+# Visualize the comparison
+ggplot(combined_word_freq, aes(x = reorder(word, n), y = n, fill = source)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  coord_flip() +
+  labs(title = "Top Words Comparison: Airbnb vs. Hotel", x = "Words", y = "Frequency")
+```
+
+## Comparison on the Ngrams
+
+```{r}
+# Tokenize the datasets into trigrams
+airbnb_trigrams <- Airbnbreviews2 %>%
+  unnest_tokens(trigram, comments, token = "ngrams", n = 3)
+
+hotel_trigrams <- Hotelreviews2 %>%
+  unnest_tokens(trigram, Review, token = "ngrams", n = 3)
+
+# Count the frequency of trigrams
+airbnb_trigram_freq <- airbnb_trigrams %>%
+  count(trigram, sort = TRUE)
+
+hotel_trigram_freq <- hotel_trigrams %>%
+  count(trigram, sort = TRUE)
+
+# Combine the top trigrams for both datasets
+combined_trigram_freq <- bind_rows(
+  airbnb_trigram_freq %>% top_n(20) %>% mutate(source = "Airbnb"),
+  hotel_trigram_freq %>% top_n(20) %>% mutate(source = "Hotel")
+)
+
+# Visualize the comparison of trigrams
+ggplot(combined_trigram_freq, aes(x = reorder(trigram, n), y = n, fill = source)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  coord_flip() +
+  labs(title = "Top Trigrams Comparison: Airbnb vs. Hotel", x = "Trigrams", y = "Frequency")
+```
+
+```{r}
+# Box plot for Rating by Sentiment in Hotel reviews
+ggplot(Hotelreviews, aes(x = sentiment, y = Rating, fill = sentiment)) +
+  geom_boxplot() +
+  labs(title = "Box Plot of Ratings by Sentiment (Hotel Reviews)", x = "Sentiment", y = "Rating") +
+  scale_fill_manual(values = c("Positive" = "lightblue", "Neutral" = "lightgray", "Negative" = "red"))
+```
+
+```{r}
+# Box plot for Rating by Sentiment in Airbnb reviews
+ggplot(Airbnbreviews, aes(x = sentimentbnb, y = sentiment_score, fill = sentimentbnb)) +
+  geom_boxplot() +
+  labs(title = "Box Plot of  rating score by Sentiment (Airbnb Reviews)", x = "Sentiment", y = "sentiment_score") +
+  scale_fill_manual(values = c("Positive" = "lightblue", "Neutral" = "lightgray", "Negative" = "red"))
+```
+
+```{r}
+# Calculate word counts for each sentiment (Hotel and Airbnb)
+#hotel_sentiment_word_counts <- Hotelreviews %>%
+  #inner_join(get_sentiments("bing"), by = "word") %>%
+  #count(word, sentiment, sort = TRUE) %>%
+  #ungroup()
+
+#airbnb_sentiment_word_counts <- Airbnbreviews %>%
+  #inner_join(get_sentiments("bing"), by = "word") %>%
+  #count(word, sentiment, sort = TRUE) %>%
+  #ungroup()
+
+# Combine both datasets
+#combined_sentiment_counts <- bind_rows(
+  #mutate(hotel_sentiment_word_counts, source = "Hotel"),
+  #mutate(airbnb_sentiment_word_counts, source = "Airbnb")
+#)
+
+# Generate the comparison cloud
+#library(wordcloud)
+#combined_sentiment_counts %>%
+  #count(word, sentiment, sort = TRUE) %>%
+  #acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  #comparison.cloud(colors = c("red", "green"), max.words = 100)
+```
+
+```{r}
+library(reshape2) 
+```
+
+```{r}
+# Count word frequencies for the Hotelreviews dataset
+hotel_word_freq <- Hotelreviews %>%
+  count(word, sort = TRUE)
+
+# Create word cloud for Hotel reviews
+wordcloud(words = hotel_word_freq$word,
+          freq = hotel_word_freq$n,
+          max.words = 100,
+          random.order = FALSE,
+          colors = brewer.pal(8, "Dark2"))
+```
+
+```{r}
+# Count word frequencies for the Airbnbreviews dataset
+airbnb_word_freq <- Airbnbreviews %>%
+  count(word, sort = TRUE)
+
+# Create word cloud for Airbnb reviews
+wordcloud(words = airbnb_word_freq$word,
+          freq = airbnb_word_freq$n,
+          max.words = 100,
+          random.order = FALSE,
+          colors = brewer.pal(8, "Set1"))
+```
+
+```{r}
+str(Airbnbreviews)
+str(Hotelreviews)
+```
+
+```{r}
+colnames(Airbnbreviews)
+```
+
+```{r}
+colnames(Hotelreviews)
+```
+
+```{r}
+colnames(Airbnbreviews)
+```
+
+# Part 5: RESEARCH QUESTIONS
+
+## QUESTION 1.1: Leveraging Positive Feedback from Airbnb Reviews(TF)
+
+```{r}
+#Identify most frequently mentioned positive aspects using Bing lexicon
+bing_lexicon <- get_sentiments("bing")
+
+positive_airbnb <- Airbnbreviews %>%
+  filter(sentimentbnb == "Positive") %>%
+  anti_join(stop_words, by = "word") %>%  # Remove stop words
+  filter(!word %in% c(".", ",", "!", "?", "-", "_", ":", ";", "(", ")")) %>%  # Remove punctuation
+  count(word, sort = TRUE) %>%
+  top_n(30)
+
+# Visualization - Bar Chart of Top 30 Positive Aspects
+positive_airbnb %>%
+  ggplot(aes(x = reorder(word, n), y = n)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  coord_flip() +
+  labs(title = "Top 30 Positive Aspects in Airbnb Reviews", x = "Words", y = "Frequency")
+
+# Visualization - Word Cloud of Positive Aspects
+wordcloud(words = positive_airbnb$word, freq = positive_airbnb$n, max.words = 100, colors = brewer.pal(8, "Dark2"))
+```
+
+QUESTION1:2 Unique Attributes Praised in Positive Airbnb Reviews(TF\*IDF)
+
+```{r}
+# Analytical Techniques: TF-IDF Analysis
+# Data Wrangling: Remove stop words, group by sentiment and word, apply TF-IDF calculations
+# Data Visualization: Word Cloud, Bar Chart
+
+# Step 2: Remove Standard Stop Words
+Airbnbreviews <- Airbnbreviews %>%
+  anti_join(stop_words, by = "word") %>%  # Remove standard English stop words
+
+  # Step 3: Filter for English Words Only
+  filter(str_detect(word, "^[a-zA-Z]+$")) %>%  # Keep only words with alphabetic characters (English letters)
+  filter(str_length(word) > 1)  # Remove single character tokens (e.g., "a", "i")
+
+# Step 4: Apply TF-IDF to Identify Unique Attributes for Positive Reviews
+airbnb_tf_idf <- Airbnbreviews %>%
+  filter(sentimentbnb == "Positive") %>%  # Filter for positive reviews
+  count(listing_id, word, sort = TRUE) %>%
+  bind_tf_idf(word, listing_id, n) %>%
+  arrange(desc(tf_idf)) %>%
+  slice_max(tf_idf, n = 30)  # Use slice_max to get the top 30 TF-IDF values
+# Visualization - Bar Chart of Top TF-IDF Attributes
+ggplot(airbnb_tf_idf, aes(x = reorder(word, tf_idf), y = tf_idf)) +
+  geom_bar(stat = "identity", fill = "lightgreen") +
+  coord_flip() +
+  labs(title = "Top Unique Attributes in Positive Airbnb Reviews (TF-IDF)", x = "Words", y = "TF-IDF Score")
+```
+
+## QUESTION 1:3 Common Phrases Expressing Satisfaction(NGRAMS)
+
+```{r}
+#Filter positive reviews from Airbnb Dataset
+positive_ngrams <- Airbnbreviews %>%
+  filter(sentimentbnb == "Positive") %>%
+  count(word, sort = TRUE) %>%
+  top_n(20)
+# Visualization - Bar Chart of Top 20 Bigrams
+positive_ngrams %>%
+  ggplot(aes(x = reorder(word, n), y = n)) +
+  geom_bar(stat = "identity", fill = "orange") +
+  coord_flip() +
+  labs(title = "Top 20 Bigrams in Positive Airbnb Reviews", x = "Phrases", y = "Frequency")
+
+# Visualization - Word Cloud of Common Satisfaction-Related Phrases
+wordcloud(words = positive_ngrams$word, freq = positive_ngrams$n, max.words = 100, colors = brewer.pal(8, "Set1"))
+```
+
+## QUESTION 2:1 Common Service-Related Complaints
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(tidytext)
+library(wordcloud)
+library(RColorBrewer)
+
+# Load stop words 
+data("stop_words")
+
+# Most frequently mentioned negative aspects for Hotel and Airbnb reviews
+negative_airbnb <- Airbnbreviews %>%
+  filter(sentimentbnb == "Negative") %>%
+  anti_join(stop_words, by = "word") %>%  
+  filter(!word %in% c(".", ",", "!", "?", "-", "_", ":", ";", "(", ")")) %>%  
+  count(word, sort = TRUE) %>%
+  top_n(20)
+
+negative_hotel <- Hotelreviews %>%
+  filter(sentiment == "Negative") %>%
+  anti_join(stop_words, by = "word") %>%  
+  filter(!word %in% c(".", ",", "!", "?", "-", "_", ":", ";", "(", ")")) %>%  
+  count(word, sort = TRUE) %>%
+  top_n(20)
+
+#Comparative Bar Chart of Top Negative Aspects
+ggplot() +
+  geom_bar(data = negative_airbnb, aes(x = reorder(word, n), y = n, fill = "Airbnb"), stat = "identity", alpha = 0.6) +
+  geom_bar(data = negative_hotel, aes(x = reorder(word, n), y = n, fill = "Hotel"), stat = "identity", alpha = 0.6) +
+  coord_flip() +
+  labs(title = "Top Negative Aspects in Hotel vs. Airbnb Reviews", x = "Words", y = "Frequency") +
+  scale_fill_manual(values = c("Airbnb" = "red", "Hotel" = "blue"))
+
+#Word Cloud for Negative Aspects in Airbnb Reviews
+set.seed(123)
+wordcloud(
+  words = negative_airbnb$word,
+  freq = negative_airbnb$n,
+  max.words = 100,
+  random.order = FALSE,
+  colors = brewer.pal(8, "Reds"),
+  main = "Word Cloud of Negative Aspects in Airbnb Reviews"
+)
+
+#Word Cloud for Negative Aspects in Hotel Reviews
+set.seed(123)
+wordcloud(
+  words = negative_hotel$word,
+  freq = negative_hotel$n,
+  max.words = 100,
+  random.order = FALSE,
+  colors = brewer.pal(8, "Blues"),
+  main = "Word Cloud of Negative Aspects in Hotel Reviews"
+)
+```
+
+```{r}
+colnames(Airbnbreviews)
+```
+
+```{r}
+# Rename the 'Rating' column in Hotelreviews to 'sentiment_score' for consistency
+Hotelreviews <- Hotelreviews %>%
+  rename(sentiment_score = Rating)
+```
+
+# QUESTION 2:2 Sentiment Comparison Between Hotel and Airbnb Reviews
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+#create a vector with service related words
+# Filter for service-related words in both Airbnb and Hotel reviews
+service_keywords <- c("service", "staff", "help", "support")
+
+# Filter Airbnb dataset for service-related words
+airbnb_service_reviews <- Airbnbreviews %>%
+  filter(word %in% service_keywords, sentimentbnb == "Negative")  # Filter for negative sentiment
+
+# Filter Hotel dataset for service-related words
+hotel_service_reviews <- Hotelreviews %>%
+  filter(word %in% service_keywords, sentiment == "Negative")  # Filter for negative sentiment
+
+# Combine the filtered datasets
+combined_service_sentiment <- bind_rows(
+  airbnb_service_reviews %>% mutate(source = "Airbnb"),
+  hotel_service_reviews %>% mutate(source = "Hotel")
+)
+
+# Visualization - Box Plot of Service-Related Sentiment Scores by Source
+ggplot(combined_service_sentiment, aes(x = source, y = sentiment_score, fill = source)) +
+  geom_boxplot() +
+  labs(title = "Sentiment Score Distribution for Service-Related Complaints by Source", 
+       x = "Source", y = "Sentiment Score") +
+  theme_minimal()
+```
+
+```{r}
+colnames(Hotelreviews)
+colnames(Airbnbreviews)
+```
+
+## QUESTION 3:How can hotels address areas of dissatisfaction highlighted in negative Hotel reviews?
+
+```{r}
+# Load required libraries
+library(tidytext)
+library(dplyr)
+library(topicmodels)
+library(ggplot2)
+library(wordcloud)
+
+# Filter negative reviews from Hotelreviews dataset
+negative_hotel_reviews <- Hotelreviews %>%
+  filter(sentiment == "Negative")
+
+# Step 2: Tokenize the negative reviews and remove stop words and punctuation
+negative_hotel_tokens <- negative_hotel_reviews %>%
+  unnest_tokens(word, word) %>%  # Unnest tokens to create a tokenized version of the text
+  anti_join(stop_words, by = "word") %>%  # Remove stop words
+  filter(!word %in% c(".", ",", "!", "?", "-", "_", ":", ";", "(", ")"))  # Remove punctuation
+
+# Step 3: Create a Document-Term Matrix (DTM) for LDA analysis
+# Note: As there is no document ID in the data, I'll create one using row number
+negative_hotel_tokens <- negative_hotel_tokens %>%
+  mutate(document = row_number())  # Creating document ID
+
+dtm <- negative_hotel_tokens %>%
+  count(document, word) %>%
+  cast_dtm(document = document, term = word, value = n)
+
+# Apply LDA to extract topics from negative reviews
+# Setting the number of topics to 5
+lda_model <- LDA(dtm, k = 5, control = list(seed = 1234))
+
+# Step 5: Extract topics and visualize
+topics <- tidy(lda_model, matrix = "beta")
+
+# Step 6: Visualize top terms for each topic
+top_terms <- topics %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+# Step 7: Plot top terms for each topic
+ggplot(top_terms, aes(x = reorder(term, beta), y = beta, fill = as.factor(topic))) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free", ncol = 3) +
+  coord_flip() +
+  labs(title = "Top Terms for Each Topic in Negative Hotel Reviews", x = "Terms", y = "Beta Score") +
+  theme_minimal()
+
+# Step 8: Create a word cloud for topics
+# Get top terms for word cloud visualization
+top_terms_wordcloud <- top_terms %>%
+  group_by(topic) %>%
+  summarise(word = paste(term, collapse = " "))
+
+# Visualize the word cloud for topics
+wordcloud(words = top_terms$term, freq = top_terms$beta, max.words = 100, random.order = FALSE, colors = brewer.pal(8, "Dark2"))
+```
+
+## QUESTION 4:Seasonal Trends in Airbnb Satisfaction
+
+## First check columns
+
+```{r}
+# Check column names and types to see if 'date' is present
+colnames(Airbnbreviews)
+```
+
+## Check date format
+
+```{r}
+# Check the structure 
+str(Airbnbreviews)
+
+# Print the first few rows of the date column to confirm its format
+head(Airbnbreviews$date)
+```
+
+## Parse the date
+
+```{r}
+# Load necessary libraries
+library(lubridate)
+library(dplyr)
+
+# Correct the date format using mdy
+Airbnbreviews <- Airbnbreviews %>%
+  mutate(date_parsed = mdy(date))  
+
+# Check if the parsing is correct
+head(Airbnbreviews)
+```
+
+## Trend analysis on the monthly reviews
+
+```{r}
+# Load necessary libraries
+library(lubridate)
+library(dplyr)
+library(ggplot2)
+
+# Group reviews by month to count the number of reviews per month across all years
+monthly_trend <- Airbnbreviews %>%
+  mutate(month = month(date_parsed, label = TRUE)) %>%  # Extract month with labels (e.g., Jan, Feb)
+  group_by(month) %>%
+  summarize(total_reviews = n())
+
+# Plot the trend by month across all years
+ggplot(monthly_trend, aes(x = month, y = total_reviews)) +
+  geom_line(group = 1, color = "blue") +
+  geom_point() +
+  labs(title = "Total Reviews by Month Across All Years",
+       x = "Month",
+       y = "Total Number of Reviews") +
+  theme_minimal()
+```
+
+## Trend Analysis Including Year and Month
+
+```{r}
+# Load necessary libraries
+library(lubridate)
+library(dplyr)
+library(ggplot2)
+
+# Extract both year and month from the date_parsed column
+Airbnbreviews <- Airbnbreviews %>%
+  mutate(
+    year = year(date_parsed),           # Extract year from date
+    month = month(date_parsed, label = TRUE)  # Extract month with labels (e.g., Jan, Feb)
+  )
+
+# Group reviews by year and month to count the number of reviews
+yearly_monthly_trend <- Airbnbreviews %>%
+  group_by(year, month) %>%
+  summarize(total_reviews = n()) %>%
+  ungroup()
+
+# Plot the trend by year and month
+ggplot(yearly_monthly_trend, aes(x = month, y = total_reviews, group = year, color = factor(year))) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Total Reviews by Month and Year for Airbnb",
+       x = "Month",
+       y = "Total Number of Reviews",
+       color = "Year") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## QUESTION 5:Customer Experience Differences Between Hotel and Airbnb
+
+```{r}
+colnames(Airbnbreviews)
+head(Airbnbreviews)
+```
+
+```{r}
+colnames(Hotelreviews)
+```
+
+```{r}
+# Load stop words 
+data("stop_words")
+
+# Combine the Datasets
+
+# Create a combined dataset for sentiment analysis
+combined_sentiment <- bind_rows(
+  Hotelreviews %>% mutate(source = "Hotel", sentimentbnb = sentiment),
+  Airbnbreviews %>% mutate(source = "Airbnb")
+) %>%
+  count(source, sentimentbnb)
+
+#Bar Chart of Sentiment Distribution by Source
+ggplot(combined_sentiment, aes(x = source, y = n, fill = sentimentbnb)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Sentiment Distribution Between Hotel and Airbnb Reviews", 
+       x = "Source", y = "Count") +
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal()
+
+# Sentiment Scores Comparison (Box Plot)
+# Create a combined dataset for sentiment scores
+combined_sentiment_scores <- bind_rows(
+  Airbnbreviews %>% mutate(source = "Airbnb"),
+  Hotelreviews %>% mutate(source = "Hotel")
+)
+
+# Box Plot of Sentiment Scores by Source
+ggplot(combined_sentiment_scores, aes(x = source, y = sentiment_score, fill = source)) +
+  geom_boxplot() +
+  labs(title = "Sentiment Score Distribution by Source", x = "Source", y = "Sentiment Score") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set3")
+```
+
+```{r}
+combined_reviews <- bind_rows(
+  Hotelreviews %>% mutate(source = "Hotel", score = ifelse(sentiment == "Positive", 1, ifelse(sentiment == "Negative", -1, 0))),
+  Airbnbreviews %>% mutate(source = "Airbnb", score = sentiment_score)
+)
+
+# Visualization - Box Plot of Sentiment Distribution
+ggplot(combined_reviews, aes(x = source, y = score, fill = source)) +
+  geom_boxplot() +
+  labs(title = "Sentiment Comparison Between Hotel and Airbnb Reviews", x = "Source", y = "Sentiment Score")
+
+# Visualization - Density Plot of Sentiment Distribution
+ggplot(combined_reviews, aes(x = score, fill = source)) +
+  geom_density(alpha = 0.6) +
+  labs(title = "Sentiment Intensity Distribution Between Hotel and Airbnb Reviews", x = "Sentiment Score", y = "Density") +
+  scale_fill_manual(values = c("Hotel" = "blue", "Airbnb" = "green"))
+
+```
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+
+# Combine both datasets for comparative analysis
+combined_reviews <- bind_rows(
+  Airbnbreviews %>%
+    select(sentiment_score) %>%
+    mutate(source = "Airbnb"),
+  Hotelreviews %>%
+    select(sentiment_score) %>%
+    mutate(source = "Hotel")
+)
+
+# Box Plot: Comparing Sentiment Score Distribution Across Airbnb and Hotel Reviews
+ggplot(combined_reviews, aes(x = source, y = sentiment_score, fill = source)) +
+  geom_boxplot() +
+  labs(title = "Sentiment Score Distribution Across Airbnb and Hotel Reviews",
+       x = "Source",
+       y = "Sentiment Score") +
+  theme_minimal()
+
+# Density Plot: Comparing Sentiment Intensity and Distribution Differences
+ggplot(combined_reviews, aes(x = sentiment_score, fill = source)) +
+  geom_density(alpha = 0.5) +
+  labs(title = "Density Plot of Sentiment Scores for Airbnb and Hotel Reviews",
+       x = "Sentiment Score",
+       y = "Density") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Airbnb" = "blue", "Hotel" = "lightgreen"))
+```
+
+```{r}
+
+```
+

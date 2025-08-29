@@ -49,4 +49,9 @@ Seasonal Trends: Airbnb reviews peaked in summer months (May–August).
 
 ---
 
+### Notes
+This project is public for portfolio purposes.  
+Files are **view-only** and may be downloaded, but they **cannot be modified** in this repository.  
+Any suggested edits must be submitted as a pull request and approved before becoming part of the project.
+
 Author: Nancy Kiplimo  
